@@ -4,9 +4,9 @@ import utlis
 
 
 ########################################################################
-webCamFeed = True
-pathImage = "5.jpg"
-cap = cv2.VideoCapture(1)
+webCamFeed = False
+pathImage = "photo.jpg"
+cap = cv2.VideoCapture(0)
 cap.set(10,160)
 heightImg = 700
 widthImg  = 700
