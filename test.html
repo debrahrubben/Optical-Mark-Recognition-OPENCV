@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scannable Sheet Marker</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.0.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/opencv.js@4.5.13/opencv.js"></script>
+</head>
+<body>
+    <input type="file" id="fileInput">
+    <button id="scanButton">Scan</button>
+    <div id="result"></div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const scanButton = document.getElementById('scanButton');
+        const resultDiv = document.getElementById('result');
+
+        scanButton.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                return alert('Please select an image file');
+            }
+
+            const img = await createImageFromBlob(file);
+
+            // Preprocess the image
+            const gray = cv.cvtColor(img, cv.COLOR_RGBA2GRAY);
+            const blurred = cv.blur(gray, new cv.Size(3, 3));
+            const thresh = cv.threshold(blurred, 127, 255, cv.THRESH_BINARY)[1];
+
+            // Find the biggest rectangle containing question numbers and answers
+            const contours = new cv.MatVector();
+            const hierarchy = new cv.Mat();
+            cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+            let biggestRectangle = null;
+            let biggestArea = 0;
+            for (let i = 0; i < contours.size(); i++) {
+                const approx = new cv.Mat();
+                cv.approxPolyDP(contours.get(i), approx, 0.01 * cv.arcLength(contours.get(i), true), true);
+                if (approx.size() === 4) { // Check if it's a rectangle
+                    const area = cv.contourArea(approx);
+                    if (area > biggestArea) {
+                        biggestRectangle = approx;
+                        biggestArea = area;
+                    }
+                }
+            }
+
+            // Crop the image to the biggest rectangle
+            const roi = new cv.Rect(biggestRectangle.data[0], biggestRectangle.data[1], biggestRectangle.data[4] - biggestRectangle.data[0], biggestRectangle.data[5] - biggestRectangle.data[1]);
+            const croppedImg = img.roi(roi);
+
+            // Use Tesseract to recognize text
+            const questionNumbers = await Tesseract.recognize(croppedImg, 'eng');
+
+            // Extract question numbers and answers
+            const lines = questionNumbers.split('\n');
+            const answers = [];
+            for (let i = 0; i < lines.length; i++) {
+                const questionNumber = lines[i].match(/\d+/)[0];
+                const answer = lines[i].match(/[A-E]$/)[0];
+                answers.push({ questionNumber, answer });
+            }
+
+            // Display the results
+            resultDiv.innerHTML = `<table><tr><th>Question Number</th><th>Answer</th></tr>`;
+            for (const answer of answers) {
+                resultDiv.innerHTML += `<tr><td><span class="math-inline">\{answer\.questionNumber\}</td\><td\></span>{answer.answer}</td></tr>`;
+            }
+            resultDiv.innerHTML += `</table>`;
+
+            // Clean up
+            img.delete();
+            gray.delete();
+            blurred.delete();
+            thresh.delete();
+            contours.delete();
+            hierarchy.delete();
+            croppedImg.delete();
+        });
+
+        function createImageFromBlob(blob) {
+            return new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(blob);
+                const img = new Image();
+                img.onload = () => {
+                    resolve(cv.imread(img));
+                    URL.revokeObjectURL(url);
+                };
+                img.onerror = reject;
+                img.src = url;
+            });
+        }
+    </script>
+</body>
+</html>
